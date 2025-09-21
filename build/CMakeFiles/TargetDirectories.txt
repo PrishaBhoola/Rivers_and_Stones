@@ -1,0 +1,3 @@
+/mnt/c/Users/hp/Rivers_and_Stones/build/CMakeFiles/student_agent_module.dir
+/mnt/c/Users/hp/Rivers_and_Stones/build/CMakeFiles/edit_cache.dir
+/mnt/c/Users/hp/Rivers_and_Stones/build/CMakeFiles/rebuild_cache.dir

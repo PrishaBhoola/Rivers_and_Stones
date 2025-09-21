@@ -1,6 +1,38 @@
-import build.student_agent_module as student_agent
+import build.student_agent_module as _sam
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
+
+def _to_str(x):
+    try:
+        return str(getattr(x, "name"))
+    except Exception:
+        return str(x)
+
+def _cell_to_dict(cell):
+    if cell is None:
+        return {}
+    if isinstance(cell, dict):
+        return {
+            "owner": _to_str(cell.get("owner", "")),
+            "side": _to_str(cell.get("side", "")),
+            "orientation": _to_str(cell.get("orientation", "")),
+        }
+    try:
+        owner = _to_str(getattr(cell, "owner"))
+        side = _to_str(getattr(cell, "side"))
+        try:
+            orientation = _to_str(getattr(cell, "orientation"))
+        except Exception:
+            orientation = ""
+        return {"owner": owner, "side": side, "orientation": orientation}
+    except Exception:
+        return {}
+
+def _normalize_board(board):
+    return [[ _cell_to_dict(c) for c in row ] for row in board]
+
+def _to_int_list(x):
+    return [int(v) for v in x]
 
 
 def get_opponent(player: str) -> str:
@@ -42,7 +74,7 @@ class BaseAgent(ABC):
     """
     Abstract base class for all agents.
     """
-    def __init__(self, player: str):
+    def _init_(self, player: str):
         """Initialize agent with player identifier."""
         self.player = player
         self.opponent = get_opponent(player)
@@ -52,31 +84,42 @@ class BaseAgent(ABC):
         pass
 
 class StudentAgent(BaseAgent):
-    def __init__(self, player: str):
-        super().__init__(player)
+    def __init__(self, side: str):
+        self._impl = _sam.StudentAgent(side)
 
-        self.agent = student_agent.StudentAgent(player)
+    def choose(self, *args):
+        # Support both call styles:
+        #  - choose(board, rows, cols, score_cols, cur_t, opp_t)
+        #  - choose(game_state_dict, cur_t, opp_t)
+        if not args:
+            raise TypeError("choose() missing arguments")
 
-    def choose(self, game_state: dict,  rows: int, cols: int, score_cols: List[int], current_player_time: float, opponent_time: float) -> Optional[Dict[str, Any]]:
-        board = game_state["board"]
-        print(board)
-        cpp_move = self.agent.choose(board, rows, cols, score_cols)
-        if cpp_move is None:
-            return None
+        if isinstance(args[0], dict):
+            gs, cur_t, opp_t = args
+            board = gs["board"]
+            rows, cols = int(gs["rows"]), int(gs["cols"])
+            score_cols = _to_int_list(gs["score_cols"])
+        else:
+            if len(args) != 6:
+                raise TypeError("choose(board, rows, cols, score_cols, cur_t, opp_t) expected")
+            board, rows, cols, score_cols, cur_t, opp_t = args
+            rows, cols = int(rows), int(cols)
+            score_cols = _to_int_list(score_cols)
 
-        # Translate to engine-compatible dict
-        move_dict = {
-            "action": cpp_move.action,
-            "from": cpp_move.from_pos,
-            "to": cpp_move.to_pos,
+        board_norm = _normalize_board(board)
+
+        # Call into C++ (returns a pybind11 Move object)
+        m = self._impl.choose(board_norm, rows, cols, score_cols, float(cur_t), float(opp_t))
+
+        # Convert Move -> dict that the engine expects
+        # C++ exposes: action, from_pos, to_pos, pushed_to, orientation
+        return {
+            "action": getattr(m, "action"),
+            "from":  list(getattr(m, "from_pos")),
+            "to":    list(getattr(m, "to_pos")),
+            "pushed_to": list(getattr(m, "pushed_to")),
+            "orientation": getattr(m, "orientation"),
         }
-        if cpp_move.action == "push":
-            move_dict["pushed_to"] = cpp_move.pushed_to
-        if cpp_move.action == "flip":
-            move_dict["orientation"] = cpp_move.orientation
-
-        return move_dict
-    
 
 def test_student_agent():
     """
