@@ -4,7 +4,7 @@
 # compile CXX with /usr/bin/g++
 CXX_DEFINES = -Dstudent_agent_module_EXPORTS
 
-CXX_INCLUDES = -isystem /mnt/c/Users/hp/Rivers_and_Stones/venv/lib/python3.12/site-packages/pybind11/include -isystem /usr/include/python3.12
+CXX_INCLUDES = -isystem /mnt/c/Users/gupta/OneDrive/Documents/COL333/Rivers_and_Stones/myenv/lib/python3.12/site-packages/pybind11/include -isystem /usr/include/python3.12
 
 CXX_FLAGS = -std=gnu++17 -fPIC -fvisibility=hidden -flto=auto -fno-fat-lto-objects
 

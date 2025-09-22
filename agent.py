@@ -557,7 +557,7 @@ class RandomAgent(BaseAgent):
 # ==================== STUDENT AGENT IMPORT ====================
 
 try:
-    from student_agent_cpp import StudentAgent
+    from student_agent import StudentAgent
 except ImportError:
     print("Warning: student_agent.py not found. Creating placeholder StudentAgent.")
     
@@ -595,7 +595,6 @@ def get_agent(player: str, strategy: str) -> BaseAgent:
             StudentAgentCpp = None
         if StudentAgentCpp:
             return StudentAgentCpp(player)
-        
         else:
             print("C++ StudentAgent not available. Falling back to Python StudentAgent.")
             return StudentAgent(player)
