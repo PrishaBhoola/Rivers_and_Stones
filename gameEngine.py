@@ -275,7 +275,7 @@ def compute_valid_targets(board:List[List[Optional[Piece]]],
                 pushed_player = target.owner
                 flow = get_river_flow_destinations(board, tx, ty, sx, sy, pushed_player, rows, cols, score_cols, river_push=True)
                 for d in flow:
-                    if not is_opponent_score_cell(d[0],d[1],player,rows,cols,score_cols):
+                    if not is_opponent_score_cell(d[0],d[1],pushed_player,rows,cols,score_cols):
                         pushes.append(((tx,ty),(d[0],d[1])))
     return {'moves': moves, 'pushes': pushes}
 
@@ -992,9 +992,10 @@ def run_gui(mode:str, circle_strategy:str, square_strategy:str, load_file:Option
                                 msg=f"Selected {selected}"
                             else:
                                 msg="Invalid click"
-        turn += 1
-        if turn > 1000:
-            print("Turn limit reached -> draw"); break
+        # turn += 1
+        # print(turn)
+        # if turn > 1000:
+        #     print("Turn limit reached -> draw"); break
 
         # --- DRAW ---
         draw_board(screen, board, rows, cols, score_cols, selected, highlights, msg, timers, current)
