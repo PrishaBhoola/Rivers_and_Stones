@@ -40,6 +40,8 @@ private:
     std::random_device rd;
     std::mt19937 gen;
     std::uniform_real_distribution<double> random_double;
+    int move_count = 0;
+    std::pair<int, int> stab1, stab2;
 
     // Move history to prevent repetition
     std::vector<Move> recent_moves;
@@ -73,6 +75,49 @@ public:
 
         auto start_time = std::chrono::steady_clock::now();
         GameState state(board, side, rows, cols, score_cols);
+        
+        if(move_count < 4){
+            if(state.current_player == "circle"){
+                int row = state.rows-3;
+                int col1 = score_cols[0]-1;
+                int col2 = score_cols.back()+1;
+                stab1 = {col1,row};
+                stab2 = {col2,row};
+                if(move_count==0){
+                    move_count++;
+                    return {"move", {col1, row-1}, {col1, row}, {}, ""};
+                } else if(move_count==1){
+                    move_count++;
+                    return {"move", {col2, row-1}, {col2, row}, {}, ""};
+                } else if(move_count==2){
+                    move_count++;
+                    return {"flip", {col1, row}, {col1, row}, {}, "vertical"};
+                } else if(move_count==3){
+                    move_count++;
+                    return {"flip", {col2, row}, {col2, row}, {}, "vertical"};
+                }
+            }
+            else{
+                int row = 2;
+                int col1 = score_cols[0]-1;
+                int col2 = score_cols.back()+1;
+                stab1 = {col1, row};
+                stab2 = {col2, row};
+                if(move_count==0){
+                    move_count++;
+                    return {"move", {col1, row+1}, {col1, row}, {}, ""};
+                } else if(move_count==1){
+                    move_count++;
+                    return {"move", {col2, row+1}, {col2, row}, {}, ""};
+                } else if(move_count==2){
+                    move_count++;
+                    return {"flip", {col1, row}, {col1, row}, {}, "vertical"};
+                } else if(move_count==3){
+                    move_count++;
+                    return {"flip", {col2, row}, {col2, row}, {}, "vertical"};
+                }
+            }
+        }
 
         // URGENT: Check for immediate wins first
         auto moves = generateAllMoves(state, side);
@@ -164,14 +209,14 @@ private:
 
                 if (side_type == "stone") {
                     generateStoneMoves(moves, state, x, y, player);
-                    moves.push_back({"flip", {x,y}, {x,y}, {}, "horizontal"});
-                    moves.push_back({"flip", {x,y}, {x,y}, {}, "vertical"});
+                    if(std::make_pair(x,y)!=stab1 && std::make_pair(x,y)!=stab2) moves.push_back({"flip", {x,y}, {x,y}, {}, "horizontal"});
+                    if(std::make_pair(x,y)!=stab1 && std::make_pair(x,y)!=stab2) moves.push_back({"flip", {x,y}, {x,y}, {}, "vertical"});
 
                 } else if (side_type == "river") {
                     generateRiverMoves(moves, state, x, y, player);
                     generateRiverPushMoves(moves, state, x, y, player);
-                    moves.push_back({"rotate", {x,y}, {x,y}, {}, ""});
-                    moves.push_back({"flip", {x,y}, {x,y}, {}, ""});
+                    if(std::make_pair(x,y)!=stab1 && std::make_pair(x,y)!=stab2) moves.push_back({"rotate", {x,y}, {x,y}, {}, ""});
+                    if(std::make_pair(x,y)!=stab1 && std::make_pair(x,y)!=stab2) moves.push_back({"flip", {x,y}, {x,y}, {}, ""});
                 }
 
                 if (moves.size() >= MAX_MOVES_PER_POSITION * 4) break;
@@ -283,7 +328,7 @@ private:
 
             if (state.board[ny][nx].empty()) {
                 // Regular move to empty space
-                moves.push_back({"move", {x,y}, {nx,ny}, {}, ""});
+                if(std::make_pair(x,y)!=stab1 && std::make_pair(x,y)!=stab2) moves.push_back({"move", {x,y}, {nx,ny}, {}, ""});
 
             } else if (!state.board[ny][nx].empty() && state.board[ny][nx].at("side") == "river") {
                 // PYTHON-INSPIRED: Moving onto a river - get ALL possible destinations
@@ -291,7 +336,7 @@ private:
 
                 // Create a move for EACH possible destination
                 for (auto [dest_x, dest_y] : destinations) {
-                    moves.push_back({"move", {x,y}, {dest_x,dest_y}, {}, ""});
+                    if(std::make_pair(x,y)!=stab1 && std::make_pair(x,y)!=stab2) moves.push_back({"move", {x,y}, {dest_x,dest_y}, {}, ""});
                 }
 
             } else if (!state.board[ny][nx].empty() && state.board[ny][nx].at("side") == "stone" ) {
@@ -303,7 +348,7 @@ private:
                 if (nx2 >= 0 && ny2 >= 0 && nx2 < state.cols && ny2 < state.rows &&
                     state.board[ny2][nx2].empty() &&
                     canPushStoneTo(nx2, ny2, pushed_stone_owner, state.rows, state.cols, state.score_cols, player)) {
-                    moves.push_back({"push", {x,y}, {nx,ny}, {nx2,ny2}, ""});
+                    if(std::make_pair(x,y)!=stab1 && std::make_pair(x,y)!=stab2) moves.push_back({"push", {x,y}, {nx,ny}, {nx2,ny2}, ""});
                 }
             }
         }
@@ -318,14 +363,14 @@ private:
             int nx = x + dx, ny = y + dy;
             if (nx < 0 || nx >= state.cols || ny < 0 || ny >= state.rows) continue;
             if (state.board[ny][nx].empty()) {
-                moves.push_back({"move", {x,y}, {nx,ny}, {}, ""});
+                if(std::make_pair(x,y)!=stab1 && std::make_pair(x,y)!=stab2) moves.push_back({"move", {x,y}, {nx,ny}, {}, ""});
             } else if (!state.board[ny][nx].empty() && state.board[ny][nx].at("side") == "river") {
                 // PYTHON-INSPIRED: Moving onto a river - get ALL possible destinations
                 auto destinations = traceAllRiverDestinations(state, nx, ny, x, y, player, player);
 
                 // Create a move for EACH possible destination
                 for (auto [dest_x, dest_y] : destinations) {
-                    moves.push_back({"move", {x,y}, {dest_x,dest_y}, {}, ""});
+                    if(std::make_pair(x,y)!=stab1 && std::make_pair(x,y)!=stab2) moves.push_back({"move", {x,y}, {dest_x,dest_y}, {}, ""});
                 }
             }
         }
@@ -358,7 +403,7 @@ private:
             // Create a separate push move for EACH destination
             for (auto [dest_x, dest_y] : destinations) {
                 if (dest_x != river_x || dest_y != river_y) { // Don't push to same position
-                    moves.push_back({
+                    if(std::make_pair(river_x,river_y)!=stab1 && std::make_pair(river_x,river_y)!=stab2) moves.push_back({
                         "push", 
                         {river_x, river_y}, 
                         {adj_x, adj_y}, 
