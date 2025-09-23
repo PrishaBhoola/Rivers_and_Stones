@@ -184,7 +184,7 @@ private:
     // PYTHON-INSPIRED: BFS river flow exploration returning ALL destinations
     std::vector<std::pair<int,int>> traceAllRiverDestinations(const GameState& state, 
                                                              int start_x, int start_y,int ox, int oy, 
-                                                             const std::string& pushed_stone_owner,
+                                                             const std::string& pushed_stone_owner, const std::string& player,
                                                              bool is_river_push = false) {
         std::vector<std::pair<int,int>> destinations;
         std::set<std::pair<int,int>> visited;
@@ -207,7 +207,7 @@ private:
             // Handle empty cells
             if (cell.empty()) {
                 // Check if pushed stone can land here
-                if (canPushStoneTo(x, y, pushed_stone_owner, state.rows, state.cols, state.score_cols)) {
+                if (canPushStoneTo(x, y, pushed_stone_owner, state.rows, state.cols, state.score_cols, player)) {
                     destinations.push_back({x, y});
                 }
                 continue;
@@ -242,7 +242,7 @@ private:
 
                         if (next_cell.empty()) {
                             // Can potentially land here
-                            if (canPushStoneTo(nx, ny, pushed_stone_owner, state.rows, state.cols, state.score_cols)) {
+                            if (canPushStoneTo(nx, ny, pushed_stone_owner, state.rows, state.cols, state.score_cols, player)) {
                                 destinations.push_back({nx, ny});
                             }
                             nx += dx;
@@ -287,7 +287,7 @@ private:
 
             } else if (!state.board[ny][nx].empty() && state.board[ny][nx].at("side") == "river") {
                 // PYTHON-INSPIRED: Moving onto a river - get ALL possible destinations
-                auto destinations = traceAllRiverDestinations(state, nx, ny, x, y, player);
+                auto destinations = traceAllRiverDestinations(state, nx, ny, x, y, player, player);
 
                 // Create a move for EACH possible destination
                 for (auto [dest_x, dest_y] : destinations) {
@@ -321,7 +321,7 @@ private:
                 moves.push_back({"move", {x,y}, {nx,ny}, {}, ""});
             } else if (!state.board[ny][nx].empty() && state.board[ny][nx].at("side") == "river") {
                 // PYTHON-INSPIRED: Moving onto a river - get ALL possible destinations
-                auto destinations = traceAllRiverDestinations(state, nx, ny, x, y, player);
+                auto destinations = traceAllRiverDestinations(state, nx, ny, x, y, player, player);
 
                 // Create a move for EACH possible destination
                 for (auto [dest_x, dest_y] : destinations) {
@@ -353,7 +353,7 @@ private:
             std::string pushed_stone_owner = adjacent_piece.at("owner");
 
             // PYTHON-INSPIRED: Get ALL possible destinations via river flow
-            auto destinations = traceAllRiverDestinations(state, river_x, river_y, adj_x, adj_y, pushed_stone_owner, true);
+            auto destinations = traceAllRiverDestinations(state, river_x, river_y, adj_x, adj_y, pushed_stone_owner, player, true);
 
             // Create a separate push move for EACH destination
             for (auto [dest_x, dest_y] : destinations) {
