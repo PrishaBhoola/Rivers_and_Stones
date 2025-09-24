@@ -10,6 +10,7 @@
 #include <limits>
 #include <set>
 #include <queue>
+#include <utility>
 
 namespace py = pybind11;
 
@@ -234,7 +235,7 @@ private:
         std::vector<std::pair<int,int>> destinations;
         std::set<std::pair<int,int>> visited;
         std::queue<std::pair<int,int>> queue;
-
+                                                            
         queue.push({start_x, start_y});
 
         while (!queue.empty()) {
@@ -260,6 +261,52 @@ private:
 
             // Handle stones - they block flow
             if (!cell.empty() && cell.at("side") == "stone") {
+                if(is_river_push && x==start_x && y==start_y) {
+                    const auto& cell = state.board[oy][ox]; 
+                    std::string orientation = cell.at("orientation");
+                    std::vector<std::pair<int,int>> flow_dirs;
+                    if (orientation == "horizontal") {
+                        flow_dirs = {{1,0}, {-1,0}};
+                    } else {
+                        flow_dirs = {{0,1}, {0,-1}};
+                    }
+                    for (auto [dx, dy] : flow_dirs) {
+                        int nx = x + dx;
+                        int ny = y + dy;
+                        
+                        while (nx >= 0 && nx < state.cols && ny >= 0 && ny < state.rows) {
+                            if (visited.count({nx, ny})) break;
+
+                            const auto& next_cell = state.board[ny][nx];
+
+                            if (next_cell.empty()) {
+                                // Can potentially land here
+                                if (canPushStoneTo(nx, ny, pushed_stone_owner, state.rows, state.cols, state.score_cols, player)) {
+                                    destinations.push_back({nx, ny});
+                                }
+                                nx += dx;
+                                ny += dy;
+                                continue;
+                            } else if (nx==ox && ny==oy) {
+                                nx+=dx;
+                                ny+=dy;
+                                continue;
+                            } else if (!next_cell.empty() && next_cell.at("side") == "stone") {
+                                // Blocked by stone
+                                break;
+                            } else if (!next_cell.empty() && next_cell.at("side") == "river") {
+                                // Hit another river - add to queue for further exploration
+                                if (!visited.count({nx, ny})) {
+                                    queue.push({nx, ny});
+                                }
+                                break;
+                            } else {
+                                break;
+                            }
+                        }
+                        
+                    }
+                }
                 continue; // Blocked by stone
             }
 
@@ -398,7 +445,7 @@ private:
             std::string pushed_stone_owner = adjacent_piece.at("owner");
 
             // PYTHON-INSPIRED: Get ALL possible destinations via river flow
-            auto destinations = traceAllRiverDestinations(state, river_x, river_y, adj_x, adj_y, pushed_stone_owner, player, true);
+            auto destinations = traceAllRiverDestinations(state, adj_x, adj_y, river_x, river_y, pushed_stone_owner, player, true);
 
             // Create a separate push move for EACH destination
             for (auto [dest_x, dest_y] : destinations) {
