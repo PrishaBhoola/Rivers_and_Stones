@@ -43,6 +43,13 @@ struct RiverNetwork {
     bool connects_to_goal;
 };
 
+// Game phase enumeration
+enum GamePhase {
+    EARLY_GAME,  // Focus on network building
+    MID_GAME,    // Balanced approach
+    LATE_GAME    // Focus on scoring
+};
+
 class StudentAgent {
 private:
     std::string side;
@@ -65,24 +72,17 @@ private:
     static constexpr double MAX_MOVE_TIME = 0.6;
     static constexpr int MAX_MOVES_PER_POSITION = 80;
     
-    // Evaluation weights
+    // Base evaluation weights (will be adjusted dynamically)
     static constexpr double WEIGHT_PIECES_IN_GOAL = 1000.0;
     static constexpr double WEIGHT_PIECES_NEAR_GOAL = 120.0;
     static constexpr double WEIGHT_ADVANCEMENT = 25.0;
     static constexpr double WEIGHT_SPREAD = 15.0;
     static constexpr double WEIGHT_RIVER_PUSH = 85.0;
     static constexpr double WEIGHT_DEFENSE = 20.0;
-    static constexpr double WEIGHT_RIVER_CREATION = 12.0;
     static constexpr double WEIGHT_BOARD_CONTROL = 10.0;
     
-    // River Chaining Strategy Weights
-    static constexpr double WEIGHT_RIVER_CHAINING = 90.0;
-    static constexpr double WEIGHT_STRATEGIC_FLIP = 120.0;
-    static constexpr double WEIGHT_RIVER_CORRIDOR = 150.0;
-    static constexpr double WEIGHT_NETWORK_EXTENSION = 100.0;
-    
-    // REFINED: Targeted River Safety Weight (less restrictive)
-    static constexpr double WEIGHT_DANGER_ZONE_PENALTY = -100.0;  // Moderate penalty for specific danger zones only
+    // Targeted River Safety Weight
+    static constexpr double WEIGHT_DANGER_ZONE_PENALTY = -100.0;
 
 public:
     explicit StudentAgent(std::string side) : side(std::move(side)), gen(rd()), random_double(0.0, 1.0) {
@@ -160,7 +160,7 @@ public:
         // Remove recent moves to prevent loops
         filterRecentMoves(moves);
         
-        // Strategic move ordering
+        // Strategic move ordering with dynamic weights
         orderMovesForWinning(moves, state, side);
         
         // Iterative deepening
@@ -198,25 +198,121 @@ public:
     }
 
 private:
-    // SIMPLIFIED: Check if vertical river is in specific danger zone only
+    // NEW: Game phase detection for dynamic weight adjustment
+    GamePhase getGamePhase(const GameState& state) {
+        // Count total pieces and network size
+        int our_pieces = 0;
+        int opponent_pieces = 0;
+        int our_network_size = 0;
+        int our_pieces_near_goal = 0;
+        int opponent_pieces_near_goal = 0;
+        
+        int our_goal_row = (side == "circle") ? 2 : state.rows - 3;
+        int opponent_goal_row = (opponent == "circle") ? 2 : state.rows - 3;
+        
+        for (int y = 0; y < state.rows; y++) {
+            for (int x = 0; x < state.cols; x++) {
+                const auto& cell = state.board[y][x];
+                if (cell.empty()) continue;
+                
+                if (cell.at("owner") == side) {
+                    our_pieces++;
+                    if (cell.at("side") == "river") {
+                        our_network_size++;
+                    }
+                    if (std::abs(y - our_goal_row) <= 3) {
+                        our_pieces_near_goal++;
+                    }
+                } else if (cell.at("owner") == opponent) {
+                    opponent_pieces++;
+                    if (std::abs(y - opponent_goal_row) <= 3) {
+                        opponent_pieces_near_goal++;
+                    }
+                }
+            }
+        }
+        
+        // Phase detection logic
+        if (our_network_size < 8 || our_pieces < 10) {
+            return EARLY_GAME;  // Focus on building network
+        } else if (our_pieces_near_goal < 6 || opponent_pieces_near_goal >= 4) {
+            return MID_GAME;    // Balanced approach, react to threats
+        } else {
+            return LATE_GAME;   // Focus on scoring
+        }
+    }
+    
+    // NEW: Get dynamic weights based on game phase
+    void getDynamicWeights(const GameState& state, double& river_chaining, double& strategic_flip, 
+                          double& river_transport, double& network_extension, double& river_corridor) {
+        GamePhase phase = getGamePhase(state);
+        
+        switch (phase) {
+            case EARLY_GAME:
+                // High focus on network building
+                river_chaining = 120.0;
+                strategic_flip = 250.0;
+                river_transport = 300.0;
+                network_extension = 300.0;
+                river_corridor = 180.0;
+                break;
+                
+            case MID_GAME:
+                // Balanced approach with transport priority
+                river_chaining = 100.0;
+                strategic_flip = 150.0;
+                river_transport = 220.0;  // Higher transport priority
+                network_extension = 180.0;
+                river_corridor = 140.0;
+                break;
+                
+            case LATE_GAME:
+                // Focus on scoring, minimal network building
+                river_chaining = 80.0;
+                strategic_flip = 80.0;
+                river_transport = 280.0;  // Highest transport priority
+                network_extension = 100.0;
+                river_corridor = 80.0;
+                break;
+        }
+    }
+
+    // Check if vertical river is in specific danger zone only
     bool isVerticalRiverInDangerZone(const GameState& state, int x, int y, const std::string& orientation) {
-        // Only check vertical rivers
         if (orientation != "vertical") return false;
         
         int opponent_goal_row = (opponent == "circle") ? 2 : state.rows - 3;
         int distance_to_opponent_goal = std::abs(y - opponent_goal_row);
         
-        // Danger zone: within 1 row of opponent goal (immediately adjacent)
         if (distance_to_opponent_goal <= 1) {
-            // Extra caution for score columns
             for (int col : state.score_cols) {
                 if (x == col) {
-                    return true; // Dangerous - vertical river in score column adjacent to opponent goal
+                    return true;
                 }
             }
         }
         
-        return false; // Safe to create vertical river
+        return false;
+    }
+    
+    // Check if river landing position creates strategic network connectivity
+    bool doesRiverCreateNetworkConnectivity(const GameState& state, int x, int y, const std::string& player) {
+        int adjacent_rivers = 0;
+        std::vector<std::pair<int,int>> dirs = {{1,0},{-1,0},{0,1},{0,-1}};
+        for (auto [dx, dy] : dirs) {
+            int nx = x + dx, ny = y + dy;
+            if (nx >= 0 && nx < state.cols && ny >= 0 && ny < state.rows) {
+                const auto& cell = state.board[ny][nx];
+                if (!cell.empty() && cell.at("owner") == player && cell.at("side") == "river") {
+                    adjacent_rivers++;
+                }
+            }
+        }
+        
+        int goal_row = (player == "circle") ? 2 : state.rows - 3;
+        bool near_goal = std::abs(y - goal_row) <= 3;
+        
+        return (adjacent_rivers >= 2) || (adjacent_rivers >= 1 && near_goal);
     }
 
     // Analyze river networks for strategic planning
@@ -262,7 +358,6 @@ private:
             
             network.river_positions.push_back({x, y});
             
-            // Check distance to goal
             double goal_dist = std::abs(y - goal_row);
             for (int col : state.score_cols) {
                 if (x == col) {
@@ -282,7 +377,6 @@ private:
                 }
             }
             
-            // Also check adjacent rivers
             std::vector<std::pair<int,int>> dirs = {{1,0},{-1,0},{0,1},{0,-1}};
             for (auto [dx, dy] : dirs) {
                 int nx = x + dx, ny = y + dy;
@@ -303,11 +397,8 @@ private:
     // Check if a position would strategically extend a river network
     bool isStrategicRiverPosition(const GameState& state, int x, int y, const std::string& player) {
         int goal_row = (player == "circle") ? 2 : state.rows - 3;
-        
-        // Check if position is closer to goal than current rivers
         bool moves_toward_goal = std::abs(y - goal_row) <= 3;
         
-        // Check if adjacent to existing rivers
         int adjacent_rivers = 0;
         std::vector<std::pair<int,int>> dirs = {{1,0},{-1,0},{0,1},{0,-1}};
         for (auto [dx, dy] : dirs) {
@@ -320,51 +411,48 @@ private:
             }
         }
         
-        // Strategic if extends network toward goal or connects multiple rivers
         return (adjacent_rivers >= 1 && moves_toward_goal) || adjacent_rivers >= 2;
     }
     
-    // River chaining evaluation with minimal safety considerations
+    // River chaining evaluation with dynamic weights
     double evaluateRiverChaining(const GameState& state) {
         double score = 0.0;
         
-        // Analyze our river networks
+        // Get dynamic weights based on game phase
+        double river_chaining, strategic_flip, river_transport, network_extension, river_corridor;
+        getDynamicWeights(state, river_chaining, strategic_flip, river_transport, network_extension, river_corridor);
+        
         auto our_networks = analyzeRiverNetworks(state, side);
         auto opponent_networks = analyzeRiverNetworks(state, opponent);
         
         for (const auto& network : our_networks) {
-            // Reward network size
-            score += WEIGHT_RIVER_CHAINING * network.network_size;
+            score += river_chaining * network.network_size;
             
-            // Major bonus for networks connecting to goal
             if (network.connects_to_goal) {
-                score += WEIGHT_RIVER_CORRIDOR;
+                score += river_corridor;
             }
             
-            // Bonus based on proximity to goal
-            score += WEIGHT_NETWORK_EXTENSION / (network.score_area_distance + 1.0);
+            score += network_extension / (network.score_area_distance + 1.0);
             
-            // Extra reward for large networks (superhighways)
             if (network.network_size >= 4) {
-                score += WEIGHT_RIVER_CORRIDOR * 0.5;
+                score += river_corridor * 0.5;
             }
         }
         
-        // Penalize opponent networks
         for (const auto& network : opponent_networks) {
-            score -= WEIGHT_RIVER_CHAINING * 0.6 * network.network_size;
+            score -= river_chaining * 0.6 * network.network_size;
             if (network.connects_to_goal) {
-                score -= WEIGHT_RIVER_CORRIDOR * 0.8;
+                score -= river_corridor * 0.8;
             }
         }
         
-        // SIMPLIFIED: Only penalize rivers in specific danger zones
+        // Only penalize rivers in specific danger zones
         for (int y = 0; y < state.rows; y++) {
             for (int x = 0; x < state.cols; x++) {
                 const auto& cell = state.board[y][x];
                 if (!cell.empty() && cell.at("owner") == side && cell.at("side") == "river") {
                     if (isVerticalRiverInDangerZone(state, x, y, cell.at("orientation"))) {
-                        score += WEIGHT_DANGER_ZONE_PENALTY; // Moderate penalty for dangerous vertical rivers only
+                        score += WEIGHT_DANGER_ZONE_PENALTY;
                     }
                 }
             }
@@ -399,10 +487,10 @@ private:
         return moves;
     }
     
-    // BFS river flow exploration returning ALL destinations
+    // FIXED: Enhanced river flow exploration that works for ALL pieces (including rivers)
     std::vector<std::pair<int,int>> traceAllRiverDestinations(const GameState& state,
                                                              int start_x, int start_y, int ox, int oy,
-                                                             const std::string& pushed_stone_owner, const std::string& player,
+                                                             const std::string& moving_piece_owner, const std::string& player,
                                                              bool is_river_push = false) {
         std::vector<std::pair<int,int>> destinations;
         std::set<std::pair<int,int>> visited;
@@ -420,19 +508,22 @@ private:
             visited.insert({x, y});
             const auto& cell = state.board[y][x];
             
-            // Handle empty cells
+            // Handle empty cells - pieces can land here
             if (cell.empty()) {
-                if (canPushStoneTo(x, y, pushed_stone_owner, state.rows, state.cols, state.score_cols, player)) {
+                // For rivers moving through network, they can land anywhere empty
+                // For stones, check push restrictions
+                if (moving_piece_owner == player || 
+                    canPushStoneTo(x, y, moving_piece_owner, state.rows, state.cols, state.score_cols, player)) {
                     destinations.push_back({x, y});
                 }
                 continue;
             }
             
-            // Handle stones - they block flow
+            // Handle stones - they block flow (except at starting position)
             if (!cell.empty() && cell.at("side") == "stone") {
                 if(is_river_push && x==start_x && y==start_y) {
-                    const auto& cell = state.board[oy][ox];
-                    std::string orientation = cell.at("orientation");
+                    const auto& river_cell = state.board[oy][ox];
+                    std::string orientation = river_cell.at("orientation");
                     std::vector<std::pair<int,int>> flow_dirs;
                     if (orientation == "horizontal") {
                         flow_dirs = {{1,0}, {-1,0}};
@@ -447,7 +538,8 @@ private:
                             if (visited.count({nx, ny})) break;
                             const auto& next_cell = state.board[ny][nx];
                             if (next_cell.empty()) {
-                                if (canPushStoneTo(nx, ny, pushed_stone_owner, state.rows, state.cols, state.score_cols, player)) {
+                                if (moving_piece_owner == player || 
+                                    canPushStoneTo(nx, ny, moving_piece_owner, state.rows, state.cols, state.score_cols, player)) {
                                     destinations.push_back({nx, ny});
                                 }
                                 nx += dx;
@@ -473,7 +565,7 @@ private:
                 continue;
             }
             
-            // Handle rivers - they redirect flow
+            // Handle rivers - they redirect flow and allow continued transport
             if (!cell.empty() && cell.at("side") == "river") {
                 std::string orientation = cell.at("orientation");
                 std::vector<std::pair<int,int>> flow_dirs;
@@ -483,7 +575,7 @@ private:
                     flow_dirs = {{0,1}, {0,-1}};
                 }
                 
-                // Explore in each flow direction
+                // Continue flow in river direction
                 for (auto [dx, dy] : flow_dirs) {
                     int nx = x + dx;
                     int ny = y + dy;
@@ -493,7 +585,9 @@ private:
                         const auto& next_cell = state.board[ny][nx];
                         
                         if (next_cell.empty()) {
-                            if (canPushStoneTo(nx, ny, pushed_stone_owner, state.rows, state.cols, state.score_cols, player)) {
+                            // FIXED: Rivers can travel to empty spaces
+                            if (moving_piece_owner == player || 
+                                canPushStoneTo(nx, ny, moving_piece_owner, state.rows, state.cols, state.score_cols, player)) {
                                 destinations.push_back({nx, ny});
                             }
                             nx += dx;
@@ -506,6 +600,7 @@ private:
                         } else if (!next_cell.empty() && next_cell.at("side") == "stone") {
                             break;
                         } else if (!next_cell.empty() && next_cell.at("side") == "river") {
+                            // Continue through connected rivers
                             if (!visited.count({nx, ny})) {
                                 queue.push({nx, ny});
                             }
@@ -531,6 +626,7 @@ private:
             if (state.board[ny][nx].empty()) {
                 if(std::make_pair(x,y)!=stab1 && std::make_pair(x,y)!=stab2) moves.push_back({"move", {x,y}, {nx,ny}, {}, ""});
             } else if (!state.board[ny][nx].empty() && state.board[ny][nx].at("side") == "river") {
+                // Stone can use river network
                 auto destinations = traceAllRiverDestinations(state, nx, ny, x, y, player, player);
                 for (auto [dest_x, dest_y] : destinations) {
                     if(std::make_pair(x,y)!=stab1 && std::make_pair(x,y)!=stab2) moves.push_back({"move", {x,y}, {dest_x,dest_y}, {}, ""});
@@ -547,7 +643,7 @@ private:
         }
     }
     
-    // Regular river moves
+    // ENHANCED: River moves with long-distance network transport
     void generateRiverMoves(std::vector<Move>& moves, const GameState& state,
                            int x, int y, const std::string& player) {
         std::vector<std::pair<int,int>> all_dirs = {{1,0},{-1,0},{0,1},{0,-1}};
@@ -556,11 +652,17 @@ private:
             if (nx < 0 || nx >= state.cols || ny < 0 || ny >= state.rows) continue;
             
             if (state.board[ny][nx].empty()) {
+                // Adjacent river move
                 if(std::make_pair(x,y)!=stab1 && std::make_pair(x,y)!=stab2) moves.push_back({"move", {x,y}, {nx,ny}, {}, ""});
             } else if (!state.board[ny][nx].empty() && state.board[ny][nx].at("side") == "river") {
+                // FIXED: Rivers can use river network to transport themselves!
                 auto destinations = traceAllRiverDestinations(state, nx, ny, x, y, player, player);
                 for (auto [dest_x, dest_y] : destinations) {
-                    if(std::make_pair(x,y)!=stab1 && std::make_pair(x,y)!=stab2) moves.push_back({"move", {x,y}, {dest_x,dest_y}, {}, ""});
+                    // Only add long-distance moves (distance > 2) to avoid duplicating adjacent moves
+                    int distance = std::abs(dest_x - x) + std::abs(dest_y - y);
+                    if (distance > 2) {
+                        if(std::make_pair(x,y)!=stab1 && std::make_pair(x,y)!=stab2) moves.push_back({"move", {x,y}, {dest_x,dest_y}, {}, ""});
+                    }
                 }
             }
         }
@@ -663,9 +765,13 @@ private:
         return new_state;
     }
     
-    // SIMPLIFIED: Strategic move ordering with targeted safety checks
+    // ENHANCED: Strategic move ordering with dynamic weights based on game phase
     void orderMovesForWinning(std::vector<Move>& moves, const GameState& state, const std::string& player) {
         int goal_row = (player == "circle") ? 2 : state.rows - 3;
+        
+        // Get dynamic weights based on game phase
+        double river_chaining, strategic_flip, river_transport, network_extension, river_corridor;
+        getDynamicWeights(state, river_chaining, strategic_flip, river_transport, network_extension, river_corridor);
         
         for (auto& move : moves) {
             double score = 0.0;
@@ -680,33 +786,29 @@ private:
                 score = 5000.0;
             }
             
-            // SIMPLIFIED: River flip evaluation with minimal safety checks
+            // Dynamic river flip evaluation based on game phase
             if (move.action == "flip") {
                 int flip_x = move.from[0], flip_y = move.from[1];
                 const auto& piece = state.board[flip_y][flip_x];
                 
                 if (!piece.empty() && piece.at("owner") == player && piece.at("side") == "stone") {
-                    // Check if this creates a strategic river extension
                     if (isStrategicRiverPosition(state, flip_x, flip_y, player)) {
-                        score += WEIGHT_STRATEGIC_FLIP;
+                        score += strategic_flip;  // Dynamic weight based on game phase
                         
-                        // Extra bonus for score columns
                         for (int col : state.score_cols) {
                             if (flip_x == col) {
-                                score += WEIGHT_STRATEGIC_FLIP * 0.5;
+                                score += strategic_flip * 0.5;
                                 break;
                             }
                         }
                         
-                        // Bonus for creating river corridors toward goal
                         if (std::abs(flip_y - goal_row) <= 2) {
-                            score += WEIGHT_STRATEGIC_FLIP * 0.8;
+                            score += strategic_flip * 0.8;
                         }
                     }
                     
-                    // TARGETED: Only penalize vertical rivers in specific danger zones
                     if (isVerticalRiverInDangerZone(state, flip_x, flip_y, move.orientation)) {
-                        score += WEIGHT_DANGER_ZONE_PENALTY; // Moderate penalty for dangerous vertical rivers only
+                        score += WEIGHT_DANGER_ZONE_PENALTY;
                     }
                 } else if (!piece.empty() && piece.at("owner") == player && piece.at("side") == "river") {
                     if (flip_y == goal_row) {
@@ -742,54 +844,105 @@ private:
                         score -= 50.0;
                     }
                 }
-            } else if (move.action == "move") {
-                int target_y = move.to[1];
-                int source_y = move.from[1];
-                int target_x = move.to[0];
+            } 
+            // ENHANCED: Move evaluation with prioritized river transport
+            else if (move.action == "move") {
+                int from_x = move.from[0], from_y = move.from[1];
+                int to_x = move.to[0], to_y = move.to[1];
                 
-                if (target_y == goal_row) {
+                // Check if this is a river being transported
+                const auto& moving_piece = state.board[from_y][from_x];
+                if (!moving_piece.empty() && moving_piece.at("owner") == player && 
+                    moving_piece.at("side") == "river") {
+                    
+                    // PRIORITIZE: River transportation through network
+                    int transport_distance = std::abs(to_x - from_x) + std::abs(to_y - from_y);
+                    if (transport_distance >= 3) { // Long-distance river transport via network
+                        score += river_transport;  // Dynamic weight - highest in late game
+                        
+                        // MAJOR BONUS: Rivers transported far distances
+                        if (transport_distance >= 5) {
+                            score += river_transport * 0.5;  // Extra bonus for very long transport
+                        }
+                        
+                        // EXTRA BONUS: River landing at strategic network extension point
+                        if (isStrategicRiverPosition(state, to_x, to_y, player)) {
+                            score += network_extension;
+                        }
+                        
+                        // BONUS: River creating network connectivity
+                        if (doesRiverCreateNetworkConnectivity(state, to_x, to_y, player)) {
+                            score += river_transport * 0.4;
+                        }
+                        
+                        // BONUS: River moving toward goal area
+                        int old_distance = std::abs(from_y - goal_row);
+                        int new_distance = std::abs(to_y - goal_row);
+                        if (new_distance < old_distance) {
+                            score += river_transport * 0.6;
+                        }
+                        
+                        // EXTRA BONUS: Rivers in score columns
+                        for (int col : state.score_cols) {
+                            if (to_x == col) {
+                                score += river_transport * 0.3;
+                                break;
+                            }
+                        }
+                    } else {
+                        // Adjacent river moves get moderate bonus
+                        score += 100.0;
+                    }
+                } else {
+                    // Stone move evaluation (lower priority than river transport)
+                    int target_y = move.to[1];
+                    int source_y = move.from[1];
+                    int target_x = move.to[0];
+                    
+                    if (target_y == goal_row) {
+                        for (int col : state.score_cols) {
+                            if (target_x == col) {
+                                const auto& piece = state.board[source_y][move.from[0]];
+                                if (!piece.empty() && piece.at("owner") == player && piece.at("side") == "stone") {
+                                    score += 10000.0;
+                                } else {
+                                    score += 7000.0;
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    
+                    int old_distance = std::abs(source_y - goal_row);
+                    int new_distance = std::abs(target_y - goal_row);
+                    int progress = old_distance - new_distance;
+                    
+                    if (progress > 0) {
+                        score += 150.0 * progress;
+                        if (new_distance == 0) {
+                            score += 1000.0;
+                        } else if (new_distance == 1) {
+                            score += 600.0;
+                        } else if (new_distance <= 2) {
+                            score += 300.0;
+                        }
+                    }
+                    
                     for (int col : state.score_cols) {
                         if (target_x == col) {
-                            const auto& piece = state.board[source_y][move.from[0]];
-                            if (!piece.empty() && piece.at("owner") == player && piece.at("side") == "stone") {
-                                score += 10000.0;
-                            } else {
-                                score += 7000.0;
-                            }
+                            score += 100.0;
                             break;
                         }
                     }
-                }
-                
-                int old_distance = std::abs(source_y - goal_row);
-                int new_distance = std::abs(target_y - goal_row);
-                int progress = old_distance - new_distance;
-                
-                if (progress > 0) {
-                    score += 150.0 * progress;
-                    if (new_distance == 0) {
-                        score += 1000.0;
-                    } else if (new_distance == 1) {
-                        score += 600.0;
-                    } else if (new_distance <= 2) {
-                        score += 300.0;
+                    
+                    int move_distance = std::abs(target_x - move.from[0]) + std::abs(target_y - move.from[1]);
+                    if (move_distance > 2) {
+                        score += 40.0; // Stone transport bonus (much lower than river transport)
                     }
-                }
-                
-                for (int col : state.score_cols) {
-                    if (target_x == col) {
-                        score += 100.0;
-                        break;
+                    
+                    if (isStrategicRiverPosition(state, target_x, target_y, player)) {
+                        score += 400.0;
                     }
-                }
-                
-                int move_distance = std::abs(target_x - move.from[0]) + std::abs(target_y - move.from[1]);
-                if (move_distance > 2) {
-                    score += 30.0;
-                }
-                
-                if (isStrategicRiverPosition(state, target_x, target_y, player)) {
-                    score += 400.0;
                 }
             } else if (move.action == "push") {
                 score += 50.0;
@@ -810,7 +963,7 @@ private:
                     }
                     
                     if (push_distance >= 3) {
-                        score += WEIGHT_RIVER_CHAINING * 0.7;
+                        score += river_chaining * 0.7;
                     }
                     
                     evaluateRiverPush(score, move, state, player);
@@ -834,7 +987,7 @@ private:
         });
     }
     
-    // Helper functions
+    // Helper functions (unchanged from original)
     bool isImmediateWinningMove(const Move& move, const GameState& state, const std::string& player) {
         GameState next_state = applyMove(state, move, player);
         return isWinning(next_state, player);
@@ -968,7 +1121,7 @@ private:
         }
     }
     
-    // Evaluation function with targeted river safety
+    // Evaluation function with dynamic river safety
     double evaluateForWinning(const GameState& state) {
         double score = 0.0;
         
@@ -989,7 +1142,7 @@ private:
         score += WEIGHT_DEFENSE * evaluateDefense(state);
         score += WEIGHT_BOARD_CONTROL * evaluateBoardControl(state);
         
-        // River evaluation with targeted safety considerations
+        // River evaluation with dynamic weights
         score += evaluateRiverChaining(state);
         
         return score;
