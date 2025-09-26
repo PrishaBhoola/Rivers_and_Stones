@@ -50,22 +50,16 @@ private:
     static constexpr int MAX_DEPTH = 3;
     static constexpr double INFINITY_VAL = 100000000.0;
     static constexpr double MAX_MOVE_TIME = 0.6;
-
-    // ENHANCED: Pathfinding and strategic weights
     static constexpr double WEIGHT_IMMEDIATE_WIN = 2000000.0;
     static constexpr double WEIGHT_DIRECT_SCORE = 500000.0;
     static constexpr double WEIGHT_RIVER_TO_STONE_SCORE = 400000.0;
     static constexpr double WEIGHT_ADJACENT_SCORE = 300000.0;
     static constexpr double WEIGHT_FLIP_NEAR_GOAL = 200000.0;
     static constexpr double WEIGHT_PUSH_TO_GOAL = 500000.0;
-
-    // NEW: Pathfinding weights
-    static constexpr double WEIGHT_PATHFINDING = 50000.0;      // Multi-step path bonus
-    static constexpr double WEIGHT_DETOUR_MOVE = 25000.0;      // Going around obstacles
-    static constexpr double WEIGHT_UNBLOCK_PATH = 30000.0;     // Creating paths for others
-    static constexpr double WEIGHT_STRATEGIC_POSITION = 15000.0; // Better positioning
-
-    // Regular evaluation weights
+    static constexpr double WEIGHT_PATHFINDING = 50000.0;
+    static constexpr double WEIGHT_DETOUR_MOVE = 25000.0;
+    static constexpr double WEIGHT_UNBLOCK_PATH = 30000.0;
+    static constexpr double WEIGHT_STRATEGIC_POSITION = 15000.0;
     static constexpr double WEIGHT_PIECES_IN_GOAL = 10000.0;
     static constexpr double WEIGHT_SCORING_THREATS = 1200.0;
     static constexpr double WEIGHT_ADVANCEMENT = 25.0;
@@ -84,60 +78,7 @@ public:
                 float current_player_time, float opponent_time) {
 
         auto start_time = chrono::steady_clock::now();
-        GameState state(board, side, rows, cols, score_cols);
-        
-        // if (move_count < 8) {
-        //     if (side == "circle") {
-        //         int row = state.rows - 3;
-        //         int col1 = score_cols[0] - 1;
-        //         int col2 = score_cols.back() + 1;
-        //         stab1 = {col1, row};
-        //         stab2 = {col2, row};
-        //         if (move_count == 0) {
-        //             move_count++; return {"push", {col1, row - 2}, {col1, row - 1}, {col1, row}, ""};
-        //         } else if (move_count == 1) {
-        //             move_count++; return {"move", {col2, row - 1}, {col2, row}, {}, ""};
-        //         } else if (move_count == 2) {
-        //             move_count++; return {"flip", {col2-1, row-1}, {}, {}, "horizontal"};
-        //         } else if (move_count == 3) {
-        //             move_count++; return {"flip", {col1+1, row-1}, {}, {}, "horizontal"};
-        //         } else if (move_count == 4) {
-        //             move_count++; return {"flip", {col2-2, row-1}, {}, {}, "vertical"};
-        //         } else if (move_count == 5) {
-        //             move_count++; return {"move", {col2-2, row - 1}, {state.cols -1, row - 1}, {}, ""};
-        //         } else if (move_count == 6) {
-        //             move_count++; return {"flip", {col2 -1, row-2}, {}, {}, "horizontal"};
-        //         } else if (move_count == 7) {
-        //             move_count++; return {"move", {col2 -1, row -2}, {state.cols -1, 1}, {}, ""};
-        //         }
-                    
-        //     } else { 
-        //         int row = 2;
-        //         int col1 = score_cols[0] - 1;
-        //         int col2 = score_cols.back() + 1;
-        //         stab1 = {col1, row};
-        //         stab2 = {col2, row};
-        //         if (move_count == 0) {
-        //             move_count++; return {"push", {col1, row + 2}, {col1, row + 1}, {col1, row}, ""};
-        //         } else if (move_count == 1) {
-        //             move_count++; return {"move", {col2, row + 1}, {col2, row}, {}, ""};
-        //         } else if (move_count == 2) {
-        //             move_count++; return {"flip", {col2-1, row+1}, {}, {}, "horizontal"};
-        //         } else if (move_count == 3) {
-        //             move_count++; return {"flip", {col1+1, row+1}, {}, {}, "horizontal"};
-        //         } else if (move_count == 4) {
-        //             move_count++; return {"flip", {col2-2, row+1}, {}, {}, "vertical"};
-        //         } else if (move_count == 5) {
-        //             move_count++; return {"move", {col2-2, row + 1}, {state.cols -1, row + 1}, {}, ""};
-        //         } else if (move_count == 6) {
-        //             move_count++; return {"flip", {col2 -1, row+2}, {}, {}, "horizontal"};
-        //         } else if (move_count == 7) {
-        //             move_count++; return {"move", {col2 -1, row +2}, {state.cols -1, state.rows -2}, {}, ""};
-        //         }
-        //     }
-        // }
-        
-        //start2
+        GameState state(board, side, rows, cols, score_cols);      
         if (move_count < 7) {
             if (side == "circle") {
                 int row = state.rows - 3;
@@ -208,10 +149,6 @@ public:
             bool time_expired = false;
             for (const auto& move : moves) {
                 auto current_time = chrono::steady_clock::now();
-                // if (chrono::duration_cast<chrono::duration<double>>(current_time - start_time).count() > move_budget) {
-                //     time_expired = true;
-                //     break;
-                // }
                 GameState next_state = applyMove(state, move, side);
                 double move_score = minimax(next_state, depth - 1, -INFINITY_VAL, INFINITY_VAL, false, start_time, move_budget);
                 if (move_score > best_score) {
@@ -454,43 +391,30 @@ private:
 
         for (auto& move : moves) {
             double score = 0.0;
-
-            // 1. IMMEDIATE WINS - ABSOLUTE HIGHEST PRIORITY
             if (isWinning(applyMove(state, move, player), player)) {
                 move.evaluation_score = WEIGHT_IMMEDIATE_WIN;
                 continue;
             }
-
-            // 2. DIRECT SCORING MOVES - ULTRA HIGH PRIORITY
             if (isDirectScoringMove(move, state, player)) {
                 score += WEIGHT_DIRECT_SCORE;
                 move.evaluation_score = score;
                 continue;
             }
-
-            // NEW 5. PATHFINDING EVALUATION - SMART ROUTING
             if (move.action == "move") {
                 double pathfinding_bonus = evaluatePathfindingMove(move, state, player, goal_row);
                 score += pathfinding_bonus;
             }
-
-            // NEW 6. DETOUR MOVES - Going around obstacles
             if (move.action == "move") {
                 double detour_bonus = evaluateDetourMove(move, state, player, goal_row);
                 score += detour_bonus;
             }
-
-            // NEW 7. UNBLOCKING PATHS - Creating routes for other pieces
             if (move.action == "move" || move.action == "push") {
                 double unblock_bonus = evaluateUnblockingMove(move, state, player);
                 score += unblock_bonus;
             }
-
             if(move.action == "move" && (state.board[move.from[1]][move.from[0]].at("side") == "stone")){
                 score*=3;
             }
-
-            // 9. PUSH PIECES TO GOAL AREA
             if (move.action == "push") {
                 for (int col : state.score_cols) {
                     if (move.pushed_to[0] == col && move.pushed_to[1] == goal_row) {
@@ -499,8 +423,6 @@ private:
                     }
                 }
             }
-
-            // 10. Regular move evaluation (same as before, but simplified)
             if (move.action == "move") {
                 int target_y = move.to[1];
                 int source_y = move.from[1];
@@ -523,11 +445,9 @@ private:
                     }
                 }
             }
-
             next_move:
             move.evaluation_score = score;
         }
-
         sort(moves.begin(), moves.end(), [](const Move& a, const Move& b) {
             return a.evaluation_score > b.evaluation_score;
         });
@@ -552,7 +472,6 @@ private:
         }
         return false;
     }
-    
     void filterRecentMoves(vector<Move>& moves) {
         moves.erase(remove_if(moves.begin(), moves.end(), [this](const Move& m) { return isMoveRecent(m); }), moves.end());
     }
@@ -563,7 +482,6 @@ private:
         }
         return false;
     }
-
     void addToHistory(const Move& move) {
         recent_moves.push_back(move);
         if (recent_moves.size() > HISTORY_SIZE) recent_moves.erase(recent_moves.begin());
@@ -571,22 +489,15 @@ private:
 
     double evaluatePathfindingMove(const Move& move, const GameState& state, const string& player, int goal_row) {
         double pathfinding_score = 0.0;
-
-        // Check if this move creates a better path to goal
         int from_x = move.from[0], from_y = move.from[1];
         int to_x = move.to[0], to_y = move.to[1];
 
-        // Get shortest path from current position to any goal position
         double old_path_length = getShortestPathToGoal(from_x, from_y, state, player, goal_row);
         double new_path_length = getShortestPathToGoal(to_x, to_y, state, player, goal_row);
-
-        // Bonus for moves that significantly reduce path length
         if (new_path_length < old_path_length) {
             double improvement = old_path_length - new_path_length;
             pathfinding_score += WEIGHT_PATHFINDING * improvement * 0.1;
         }
-
-        // Special bonus for moves that overcome direct blocks
         if (isDirectlyBlocked(from_x, from_y, state, player, goal_row)) {
             if (isMovingAroundBlock(move, state, player, goal_row)) {
                 pathfinding_score += WEIGHT_PATHFINDING * 0.5;
@@ -601,15 +512,11 @@ private:
 
         int from_x = move.from[0], from_y = move.from[1];
         int to_x = move.to[0], to_y = move.to[1];
-
-        // Check if piece is blocked in direct path to goal
         if (isDirectlyBlocked(from_x, from_y, state, player, goal_row)) {
 
-            // Evaluate if this move is a smart detour
             if (isSmartDetour(move, state, player, goal_row)) {
                 detour_score += WEIGHT_DETOUR_MOVE;
 
-                // Extra bonus if detour eventually leads to better position
                 if (hasMultiStepAdvantage(to_x, to_y, state, player, goal_row)) {
                     detour_score += WEIGHT_STRATEGIC_POSITION;
                 }
@@ -622,11 +529,9 @@ private:
     double evaluateUnblockingMove(const Move& move, const GameState& state, const string& player) {
         double unblock_score = 0.0;
 
-        // Check if this move clears a path for other friendly pieces
         int blocked_pieces = 0;
         int freed_pieces = 0;
 
-        // Count currently blocked friendly pieces
         for (int y = 0; y < state.rows; y++) {
             for (int x = 0; x < state.cols; x++) {
                 const auto& cell = state.board[y][x];
@@ -638,7 +543,6 @@ private:
             }
         }
 
-        // Simulate the move and count freed pieces
         GameState next_state = applyMove(state, move, player);
         for (int y = 0; y < next_state.rows; y++) {
             for (int x = 0; x < next_state.cols; x++) {
@@ -651,20 +555,15 @@ private:
             }
         }
 
-        // Bonus for moves that free up blocked pieces
-        int net_freed = freed_pieces - (blocked_pieces - 1); // -1 because the moving piece itself
+        int net_freed = freed_pieces - (blocked_pieces - 1);
         if (net_freed > 0) {
             unblock_score += WEIGHT_UNBLOCK_PATH * net_freed * 0.1;
         }
 
         return unblock_score;
     }
-
-    // Helper functions for pathfinding
-
     double getShortestPathToGoal(int start_x, int start_y, const GameState& state, const string& player, int goal_row) {
-        // Simple BFS to find shortest path to any goal position
-        queue<tuple<int, int, int>> q; // x, y, distance
+        queue<tuple<int, int, int>> q;
         set<pair<int, int>> visited;
 
         q.push({start_x, start_y, 0});
@@ -674,7 +573,6 @@ private:
             auto [x, y, dist] = q.front();
             q.pop();
 
-            // Check if reached a goal position
             if (y == goal_row) {
                 for (int col : state.score_cols) {
                     if (x == col) {
@@ -683,11 +581,10 @@ private:
                 }
             }
 
-            // Explore neighbors
             for (auto [dx, dy] : vector<pair<int,int>>{{1,0},{-1,0},{0,1},{0,-1}}) {
                 int nx = x + dx, ny = y + dy;
                 if (nx >= 0 && nx < state.cols && ny >= 0 && ny < state.rows &&
-                    !visited.count({nx, ny}) && dist < 8) { // Limit search depth
+                    !visited.count({nx, ny}) && dist < 8) {
 
                     if (state.board[ny][nx].empty() || 
                         (!state.board[ny][nx].empty() && 
@@ -700,11 +597,10 @@ private:
             }
         }
 
-        return 100.0; // No path found
+        return 100.0;
     }
 
     bool isDirectlyBlocked(int x, int y, const GameState& state, const string& player, int goal_row) {
-        // Check if direct path to goal is blocked
         int direction = (goal_row > y) ? 1 : -1;
 
         for (int check_y = y + direction; check_y != goal_row; check_y += direction) {
@@ -713,7 +609,7 @@ private:
             const auto& cell = state.board[check_y][x];
             if (!cell.empty() && 
                 (cell.at("owner") != player || cell.at("side") != "river")) {
-                return true; // Path blocked
+                return true;
             }
         }
 
@@ -724,12 +620,10 @@ private:
         int from_x = move.from[0], from_y = move.from[1];
         int to_x = move.to[0], to_y = move.to[1];
 
-        // Check if moving in a direction that goes around obstacles
         int goal_direction = (goal_row > from_y) ? 1 : -1;
         int move_y_direction = (to_y > from_y) ? 1 : (to_y < from_y) ? -1 : 0;
         int move_x_direction = (to_x > from_x) ? 1 : (to_x < from_x) ? -1 : 0;
 
-        // Moving toward goal vertically OR moving sideways (potential detour)
         return (move_y_direction == goal_direction) || (move_x_direction != 0 && move_y_direction == 0);
     }
 
@@ -737,12 +631,9 @@ private:
         int from_x = move.from[0], from_y = move.from[1];
         int to_x = move.to[0], to_y = move.to[1];
 
-        // Smart detour: moving sideways when direct path is blocked
         if (abs(to_x - from_x) > 0 && to_y == from_y) {
-            // Check if there's a clearer path from the new position
             double current_path = getShortestPathToGoal(from_x, from_y, state, player, goal_row);
             double new_path = getShortestPathToGoal(to_x, to_y, state, player, goal_row);
-
             return new_path < current_path;
         }
 
@@ -750,7 +641,6 @@ private:
     }
 
     bool hasMultiStepAdvantage(int x, int y, const GameState& state, const string& player, int goal_row) {
-        // Check if position has advantage for future moves
         int clear_paths = 0;
 
         for (auto [dx, dy] : vector<pair<int,int>>{{1,0},{-1,0},{0,1},{0,-1}}) {
@@ -762,20 +652,19 @@ private:
             }
         }
 
-        return clear_paths >= 2; // Multiple options available
+        return clear_paths >= 2;
     }
 
     bool isPieceBlocked(int x, int y, const GameState& state, const string& player) {
-        // Simple check: can the piece move in any direction?
         for (auto [dx, dy] : vector<pair<int,int>>{{1,0},{-1,0},{0,1},{0,-1}}) {
             int nx = x + dx, ny = y + dy;
             if (nx >= 0 && nx < state.cols && ny >= 0 && ny < state.rows) {
                 if (state.board[ny][nx].empty()) {
-                    return false; // Has at least one free move
+                    return false;
                 }
             }
         }
-        return true; // All directions blocked
+        return true;
     }
 
 
@@ -836,8 +725,6 @@ private:
         score += WEIGHT_BOARD_CONTROL * evaluateBoardControl(state);
         return score;
     }
-
-    // --- FIX: This function now prioritizes networks closer to the opponent's goal ---
     double evaluateRiverNetwork(const GameState& state, const string& player) {
         double total_network_score = 0;
         set<pair<int, int>> visited_rivers;
@@ -882,7 +769,7 @@ private:
                     }
 
                     total_network_score += network_advancement_bonus;
-                    total_network_score += reachable_squares.size() * 0.5; // Reduce weight of raw size slightly
+                    total_network_score += reachable_squares.size() * 0.5;
                 }
             }
         }
@@ -967,15 +854,14 @@ private:
         return threatening_pieces.size();
     }
 
-    // --- FIX: This function now evaluates the advancement of RIVERS as well as stones ---
     double evaluateAdvancement(const GameState& state) {
         double my_advancement = 0.0;
         int my_goal = (side == "circle") ? 2 : state.rows - 3;
         for (int y = 0; y < state.rows; y++) {
             for (int x = 0; x < state.cols; x++) {
                 const auto& cell = state.board[y][x];
-                if (!cell.empty() && cell.at("owner") == side) { // Check applies to both stones and rivers
-                    double weight = (cell.at("side") == "stone") ? 1.0 : 0.5; // Stones are slightly more important
+                if (!cell.empty() && cell.at("owner") == side) {
+                    double weight = (cell.at("side") == "stone") ? 1.0 : 0.5;
                     my_advancement += weight * (10.0 / (abs(y - my_goal) + 1));
                 }
             }
