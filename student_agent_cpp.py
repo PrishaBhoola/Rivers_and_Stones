@@ -88,9 +88,6 @@ class StudentAgent(BaseAgent):
         self._impl = _sam.StudentAgent(side)
 
     def choose(self, *args):
-        # Support both call styles:
-        #  - choose(board, rows, cols, score_cols, cur_t, opp_t)
-        #  - choose(game_state_dict, cur_t, opp_t)
         if not args:
             raise TypeError("choose() missing arguments")
 
@@ -107,12 +104,7 @@ class StudentAgent(BaseAgent):
             score_cols = _to_int_list(score_cols)
 
         board_norm = _normalize_board(board)
-
-        # Call into C++ (returns a pybind11 Move object)
         m = self._impl.choose(board_norm, rows, cols, score_cols, float(cur_t), float(opp_t))
-
-        # Convert Move -> dict that the engine expects
-        # C++ exposes: action, from_pos, to_pos, pushed_to, orientation
         return {
             "action": getattr(m, "action"),
             "from":  list(getattr(m, "from_pos")),
@@ -147,5 +139,4 @@ def test_student_agent():
         print("StudentAgent created successfully")
 
 if __name__ == "__main__":
-    # Run basic test when file is executed directly
     test_student_agent()
